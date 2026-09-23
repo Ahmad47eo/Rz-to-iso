@@ -69,7 +69,7 @@ func start(this js.Value, args []js.Value) any {
 		return js.ValueOf(map[string]any{"error": fmt.Sprintf("RVZ error: %v", err)})
 	}
 
-	const batchSize = 4 * 1024 * 1024
+	const batchSize = 1 * 1024 * 1024
 	converter = r
 	outBuffer = make([]byte, batchSize)
 	jsBuffer = js.Global().Get("Uint8Array").New(batchSize)

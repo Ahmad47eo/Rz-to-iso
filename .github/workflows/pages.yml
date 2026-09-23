@@ -80,19 +80,4 @@ jobs:
 
       - name: Deploy to GitHub Pages
         id: deployment
-        run: |
-          cp index.html public/index.html
-          cp worker.js public/worker.js
-
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - uses: actions/upload-pages-artifact@v4
-        with:
-          path: public
-
-      - name: Deploy to GitHub Pages
-        id: deployment
         uses: actions/deploy-pages@v4

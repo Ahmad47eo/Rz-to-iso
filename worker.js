@@ -104,6 +104,7 @@ onmessage=async e=>{
         lastStepMs=performance.now()-stepStarted;
         stepCount++;
 
+        if(!result || result===undefined) throw new Error('Decoder returned no result (WASM likely panicked).');
         if(result.error)throw new Error(result.error);
 
         if(result.done){

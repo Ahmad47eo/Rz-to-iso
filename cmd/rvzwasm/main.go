@@ -59,9 +59,9 @@ func convert(this js.Value, args []js.Value) any {
 		return js.ValueOf(map[string]any{"error": fmt.Sprintf("RVZ error: %v", err)})
 	}
 
-	// Keep the batch moderate for mobile Safari/iOS memory limits.
-	// A 100 MiB Go buffer + 100 MiB JS buffer can cause the tab to be killed.
-	const batchSize = 16 * 1024 * 1024
+	// 50 MiB batch: larger than the previous mobile-safe setting,
+	// while avoiding the 100 MiB + 100 MiB memory pressure that killed the tab.
+	const batchSize = 50 * 1024 * 1024
 	out := make([]byte, batchSize)
 	total := r.Size()
 	var done int64

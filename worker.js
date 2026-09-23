@@ -1,17 +1,30 @@
-let inputAccess=null,outputAccess=null;
+let inputFile=null;
+let outputAccess=null;
+let inputReader=null;
 let inputBuffer=null;
+const OUT_NAME='rvz-output.iso';
 
-async function initFiles(inputName,outputName){
+async function initFiles(file,outputName){
+  if(!file) throw new Error('No RVZ file was supplied.');
+  inputFile=file;
+  inputReader=new FileReaderSync();
+
   const root=await navigator.storage.getDirectory();
-  const ih=await root.getFileHandle(inputName);
   const oh=await root.getFileHandle(outputName,{create:true});
-  inputAccess=await ih.createSyncAccessHandle();
   outputAccess=await oh.createSyncAccessHandle();
-  globalThis.rvzInputSize=()=>inputAccess.getSize();
+  outputAccess.truncate(0);
+
+  globalThis.rvzInputSize=()=>inputFile.size;
   globalThis.rvzInputRead=(offset,length)=>{
-    if(!inputBuffer || inputBuffer.byteLength<length) inputBuffer=new Uint8Array(length);
-    const n=inputAccess.read(inputBuffer,{at:Number(offset)});
-    return n===length?inputBuffer:inputBuffer.slice(0,n);
+    if(length<=0)return new Uint8Array(0);
+    const start=Number(offset);
+    const end=Math.min(inputFile.size,start+length);
+    if(start<0||start>=inputFile.size||end<=start)return new Uint8Array(0);
+
+    const bytes=new Uint8Array(inputReader.readAsArrayBuffer(inputFile.slice(start,end)));
+    if(!inputBuffer||inputBuffer.byteLength<bytes.byteLength)inputBuffer=new Uint8Array(bytes.byteLength);
+    inputBuffer.set(bytes);
+    return bytes.byteLength===length?inputBuffer:inputBuffer.slice(0,bytes.byteLength);
   };
   globalThis.rvzOutputWrite=(data,offset)=>outputAccess.write(data,{at:Number(offset)});
   globalThis.rvzProgress=(done,total)=>postMessage({type:'progress',done,total});
@@ -26,22 +39,32 @@ let wasmReady=false;
     go.run(result.instance);
     wasmReady=true;
     postMessage({type:'ready'});
-  }catch(e){postMessage({type:'error',message:'Decoder failed to load: '+e.message});}
+  }catch(e){
+    postMessage({type:'error',message:'Decoder failed to load: '+(e.message||String(e))});
+  }
 })();
 
 onmessage=async e=>{
   const m=e.data||{};
   if(m.type!=='start'||!wasmReady)return;
   try{
-    await initFiles(m.input,m.output);
+    await initFiles(m.file,OUT_NAME);
+    postMessage({type:'reading'});
     const result=globalThis.rvzConvert();
     if(result.error)throw new Error(result.error);
     outputAccess.flush();
-    outputAccess.close();inputAccess.close();
+    outputAccess.close();
+    outputAccess=null;
+    inputFile=null;
+    inputReader=null;
+    inputBuffer=null;
     postMessage({type:'done',size:result.size,name:m.name});
   }catch(e){
     try{if(outputAccess)outputAccess.close()}catch(_){}
-    try{if(inputAccess)inputAccess.close()}catch(_){}
+    outputAccess=null;
+    inputFile=null;
+    inputReader=null;
+    inputBuffer=null;
     postMessage({type:'error',message:e.message||String(e)});
   }
 };

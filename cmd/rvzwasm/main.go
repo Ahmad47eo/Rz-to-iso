@@ -59,8 +59,8 @@ func convert(this js.Value, args []js.Value) any {
 		return js.ValueOf(map[string]any{"error": fmt.Sprintf("RVZ error: %v", err)})
 	}
 
-	// 30 MiB batch for a balance between throughput and mobile memory usage.
-	const batchSize = 30 * 1024 * 1024
+	// Keep both WASM and JavaScript memory low on iPhone/iPad.
+	const batchSize = 4 * 1024 * 1024
 	out := make([]byte, batchSize)
 	total := r.Size()
 	var done int64
@@ -69,34 +69,22 @@ func convert(this js.Value, args []js.Value) any {
 
 	jsBuf := js.Global().Get("Uint8Array").New(batchSize)
 
-	flush := func(n int) error {
-		if n == 0 {
-			return nil
-		}
-		js.CopyBytesToJS(jsBuf, out[:n])
-		data := jsBuf
-		if n != batchSize {
-			data = jsBuf.Call("subarray", 0, n)
-		}
-		written := writeFn.Invoke(data, outOffset).Int()
-		if written != n {
-			return io.ErrShortWrite
-		}
-		outOffset += int64(n)
-		return nil
-	}
-
-	pending := 0
 	for {
-		n, er := r.Read(out[pending:])
-		pending += n
-
-		if pending == batchSize || er == io.EOF {
-			if err := flush(pending); err != nil {
-				return js.ValueOf(map[string]any{"error": err.Error()})
+		n, er := r.Read(out)
+		if n > 0 {
+			js.CopyBytesToJS(jsBuf, out[:n])
+			data := jsBuf
+			if n != batchSize {
+				data = jsBuf.Call("subarray", 0, n)
 			}
-			done += int64(pending)
-			pending = 0
+
+			written := writeFn.Invoke(data, outOffset).Int()
+			if written != n {
+				return js.ValueOf(map[string]any{"error": io.ErrShortWrite.Error()})
+			}
+
+			outOffset += int64(n)
+			done += int64(n)
 
 			if done-lastProgress >= 16*1024*1024 || er == io.EOF {
 				js.Global().Get("rvzProgress").Invoke(done, total)
@@ -109,6 +97,9 @@ func convert(this js.Value, args []js.Value) any {
 		}
 		if er != nil {
 			return js.ValueOf(map[string]any{"error": er.Error()})
+		}
+		if n == 0 {
+			return js.ValueOf(map[string]any{"error": "Decoder returned no data."})
 		}
 	}
 

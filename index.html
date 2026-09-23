@@ -11,44 +11,66 @@
 <body>
 <main class="card">
 <h1>RVZ → ISO</h1>
-<p>Local RVZ decompression for your own Wii/GameCube disc images. The file is processed in your browser and is not uploaded to a server.</p>
+<p>Local RVZ decompression for your own Wii/GameCube disc images. The file stays on your device and is processed locally.</p>
 <div id="drop" class="drop"><strong>Drop an .rvz file here</strong><br><span>or tap to choose a file</span><input id="file" type="file" accept=".rvz" hidden></div>
 <button id="convert" class="btn" disabled>Convert to ISO</button>
 <div class="bar"><i id="bar"></i></div>
 <div id="status" class="status">Loading decoder…</div>
-<div class="small">RVZ is a lossless disc-image format. Large files need substantial free storage/RAM while the ISO is being created.</div>
+<div class="small">Large files are processed through the browser's local file storage to avoid keeping the whole RVZ and ISO in RAM.</div>
 </main>
-<script src="./wasm_exec.js"></script>
 <script>
 const drop=document.querySelector('#drop'),input=document.querySelector('#file'),button=document.querySelector('#convert'),status=document.querySelector('#status'),bar=document.querySelector('#bar');
-let selected=null,ready=false,chunks=[],outBytes=0,outName='output.iso';
+let selected=null,ready=false,worker=null;
+const IN_NAME='rvz-input.tmp',OUT_NAME='rvz-output.iso';
 function setStatus(s){status.textContent=s}
 function setFile(f){selected=f;if(!f)return;if(!/\.rvz$/i.test(f.name)){setStatus('Please choose an .rvz file.');button.disabled=true;return}button.disabled=!ready;setStatus('Selected: '+f.name+'\nInput: '+(f.size/1073741824).toFixed(2)+' GB\nReady.');}
 drop.onclick=()=>input.click();input.onchange=()=>setFile(input.files[0]);
 ['dragenter','dragover'].forEach(e=>drop.addEventListener(e,x=>{x.preventDefault();drop.classList.add('drag')}));
 ['dragleave','drop'].forEach(e=>drop.addEventListener(e,x=>{x.preventDefault();drop.classList.remove('drag')}));
 drop.addEventListener('drop',e=>setFile(e.dataTransfer.files[0]));
-async function loadDecoder(){try{const go=new Go();const r=await WebAssembly.instantiateStreaming(fetch('./rvz.wasm'),go.importObject);go.run(r.instance);ready=true;setStatus(selected?'Selected: '+selected.name+'\nReady.':'Decoder ready. Choose an RVZ file.');button.disabled=!selected;}catch(e){setStatus('Decoder failed to load: '+e.message);}}
-loadDecoder();
-button.onclick=async()=>{
- if(!selected||!ready)return;
- button.disabled=true;chunks=[];outBytes=0;bar.style.width='0%';setStatus('Reading RVZ…');
- const data=new Uint8Array(await selected.arrayBuffer()), name=selected.name.replace(/\.rvz$/i,'')+'.iso';
- const onChunk=(chunk,total,expected)=>{
-   if(chunk){chunks.push(new Uint8Array(chunk));outBytes+=chunk.byteLength;}
-   if(expected)bar.style.width=Math.min(100,total/expected*100)+'%';
-   setStatus('Converting…\n'+(total/1073741824).toFixed(2)+' / '+(expected/1073741824).toFixed(2)+' GB');
- };
+
+async function init(){
  try{
-   const result=window.rvzConvert(data,onChunk);
-   if(result.error)throw new Error(result.error);
-   const blob=new Blob(chunks,{type:'application/octet-stream'}),a=document.createElement('a');
-   a.href=URL.createObjectURL(blob);a.download=name;a.click();
-   setStatus('Done!\nISO size: '+(outBytes/1073741824).toFixed(2)+' GB\nThe ISO was created locally.');
-   bar.style.width='100%';
- }catch(e){setStatus('Conversion failed: '+e.message);}
- finally{button.disabled=false;}
-};
+   worker=new Worker('./worker.js');
+   worker.onmessage=async e=>{
+     const m=e.data||{};
+     if(m.type==='ready'){ready=true;button.disabled=!selected;setStatus(selected?'Selected: '+selected.name+'\nReady.':'Decoder ready. Choose an RVZ file.');}
+     else if(m.type==='progress'){
+       bar.style.width=Math.min(100,(m.done/m.total)*100)+'%';
+       setStatus('Converting…\n'+(m.done/1073741824).toFixed(2)+' / '+(m.total/1073741824).toFixed(2)+' GB');
+     }else if(m.type==='done'){
+       try{
+         const root=await navigator.storage.getDirectory();
+         const h=await root.getFileHandle(OUT_NAME);
+         const file=await h.getFile();
+         const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=m.name||'output.iso';a.click();
+         setStatus('Done!\nISO size: '+(m.size/1073741824).toFixed(2)+' GB\nDownload started.');
+         bar.style.width='100%';
+       }catch(err){setStatus('ISO created, but download failed: '+err.message);}
+       button.disabled=false;
+     }else if(m.type==='error'){
+       setStatus('Conversion failed: '+m.message);button.disabled=false;
+     }
+   };
+   worker.onerror=e=>{setStatus('Decoder worker failed: '+e.message);button.disabled=false};
+ }catch(e){setStatus('Could not start decoder: '+e.message)}
+}
+async function convert(){
+ if(!selected||!ready)return;
+ button.disabled=true;bar.style.width='0%';setStatus('Preparing RVZ…');
+ try{
+   const root=await navigator.storage.getDirectory();
+   const inHandle=await root.getFileHandle(IN_NAME,{create:true});
+   const outHandle=await root.getFileHandle(OUT_NAME,{create:true});
+   const writable=await inHandle.createWritable();
+   await selected.stream().pipeTo(writable);
+   const outWritable=await outHandle.createWritable();await outWritable.truncate(0);await outWritable.close();
+   setStatus('Reading RVZ…');
+   worker.postMessage({type:'start',input:IN_NAME,output:OUT_NAME,name:selected.name.replace(/\.rvz$/i,'')+'.iso'});
+ }catch(e){setStatus('Could not prepare file: '+e.message);button.disabled=false}
+}
+button.onclick=convert;
+init();
 </script>
 </body>
 </html>

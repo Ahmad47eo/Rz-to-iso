@@ -5,8 +5,8 @@ async function initFiles(inputName,outputName){
   const root=await navigator.storage.getDirectory();
   const ih=await root.getFileHandle(inputName);
   const oh=await root.getFileHandle(outputName,{create:true});
-  inputAccess=await ih.createSyncAccessHandle({mode:'read-only'});
-  outputAccess=await oh.createSyncAccessHandle({mode:'readwrite'});
+  inputAccess=await ih.createSyncAccessHandle();
+  outputAccess=await oh.createSyncAccessHandle();
   globalThis.rvzInputSize=()=>inputAccess.getSize();
   globalThis.rvzInputRead=(offset,length)=>{
     if(!inputBuffer || inputBuffer.byteLength<length) inputBuffer=new Uint8Array(length);

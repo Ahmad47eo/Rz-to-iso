@@ -33,7 +33,7 @@ jobs:
 
           require github.com/bodgit/rvz v1.0.3
           EOF
-          go mod download
+          go mod tidy
           GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o public/rvz.wasm ./cmd/rvzwasm
           cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" public/wasm_exec.js
 

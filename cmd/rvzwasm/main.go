@@ -85,7 +85,7 @@ func step(this js.Value, args []js.Value) any {
 		return js.ValueOf(map[string]any{"error": "Converter is not started."})
 	}
 
-	n, er := converter.Read(outBuffer)
+	n, er := io.ReadFull(converter, outBuffer)
 	if n > 0 {
 		js.CopyBytesToJS(jsBuffer, outBuffer[:n])
 		data := jsBuffer
@@ -106,7 +106,7 @@ func step(this js.Value, args []js.Value) any {
 		return js.ValueOf(map[string]any{"error": er.Error()})
 	}
 
-	if er == io.EOF {
+	if er == io.EOF || er == io.ErrUnexpectedEOF {
 		result := map[string]any{"done": true, "size": doneSize}
 		converter = nil
 		outBuffer = nil
@@ -114,9 +114,6 @@ func step(this js.Value, args []js.Value) any {
 		return js.ValueOf(result)
 	}
 
-	if n == 0 {
-		return js.ValueOf(map[string]any{"error": "Decoder returned no data."})
-	}
 
 	return js.ValueOf(map[string]any{"done": false, "size": doneSize, "total": totalSize})
 }

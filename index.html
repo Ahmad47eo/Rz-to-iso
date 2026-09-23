@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<link rel="preload" href="./wasm_exec.js" as="script">
+<link rel="preload" href="./wasm_exec.js?v=2aa0d32" as="script">
 <link rel="preload" href="./rvz.wasm" as="fetch" type="application/wasm" crossorigin>
 <title>RVZ → ISO Converter</title>
 <style>
@@ -40,7 +40,7 @@ drop.addEventListener('drop',e=>setFile(e.dataTransfer.files[0]));
 
 async function init(){
   try{
-    worker=new Worker('./worker.js');
+    worker=new Worker('./worker.js?v=2aa0d32');
     worker.onmessage=async e=>{
       const m=e.data||{};
       if(m.type==='ready'){

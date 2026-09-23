@@ -80,7 +80,12 @@ func start(this js.Value, args []js.Value) any {
 	return js.ValueOf(map[string]any{"ok": true, "size": totalSize})
 }
 
-func step(this js.Value, args []js.Value) any {
+func step(this js.Value, args []js.Value) (result any) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = js.ValueOf(map[string]any{"error": fmt.Sprintf("WASM decoder panic: %v", r)})
+		}
+	}()
 	if converter == nil {
 		return js.ValueOf(map[string]any{"error": "Converter is not started."})
 	}

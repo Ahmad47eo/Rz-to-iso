@@ -66,7 +66,7 @@ func convert(this js.Value, args []js.Value) any {
 	}
 
 	w := &jsWriter{writeFn: writeFn}
-	buf := make([]byte, 256*1024)
+	buf := make([]byte, 4*1024*1024)
 	var done int64
 	total := r.Size()
 

@@ -26,9 +26,6 @@ func (r *jsReaderAt) ReadAt(p []byte, off int64) (int, error) {
 		return 0, io.EOF
 	}
 	out := r.readFn.Invoke(off, want)
-	if out.Type() != js.TypeObject {
-		return 0, errors.New("rvz: input read failed")
-	}
 	n := js.CopyBytesToGo(p[:want], out)
 	if n != want {
 		return n, io.ErrUnexpectedEOF
@@ -47,8 +44,7 @@ func (w *jsWriter) Write(p []byte) (int, error) {
 	}
 	buf := js.Global().Get("Uint8Array").New(len(p))
 	js.CopyBytesToJS(buf, p)
-	result := w.writeFn.Invoke(buf, w.size)
-	n := result.Int()
+	n := w.writeFn.Invoke(buf, w.size).Int()
 	if n != len(p) {
 		return n, io.ErrShortWrite
 	}
@@ -57,10 +53,6 @@ func (w *jsWriter) Write(p []byte) (int, error) {
 }
 
 func convert(this js.Value, args []js.Value) any {
-	if len(args) != 0 {
-		return js.ValueOf(map[string]any{"error": "Expected no arguments."})
-	}
-
 	readFn := js.Global().Get("rvzInputRead")
 	writeFn := js.Global().Get("rvzOutputWrite")
 	sizeFn := js.Global().Get("rvzInputSize")
@@ -75,7 +67,7 @@ func convert(this js.Value, args []js.Value) any {
 	}
 
 	w := &jsWriter{writeFn: writeFn}
-	buf := make([]byte, 4*1024*1024)
+	buf := make([]byte, 256*1024)
 	var done int64
 	total := r.Size()
 

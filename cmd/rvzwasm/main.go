@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"syscall/js"
@@ -9,62 +9,75 @@ import (
 	"github.com/bodgit/rvz"
 )
 
-type chunkWriter struct {
-	cb   js.Value
-	buf  []byte
-	size int64
+type jsReaderAt struct {
+	readFn js.Value
+	size   int64
 }
 
-func (w *chunkWriter) Write(p []byte) (int, error) {
-	written := len(p)
-	for len(p) > 0 {
-		space := cap(w.buf) - len(w.buf)
-		if space == 0 {
-			w.flush()
-			space = cap(w.buf)
-		}
-		n := len(p)
-		if n > space {
-			n = space
-		}
-		w.buf = append(w.buf, p[:n]...)
-		p = p[n:]
-		if len(w.buf) == cap(w.buf) {
-			w.flush()
-		}
+func (r *jsReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	if off < 0 || off >= r.size {
+		return 0, io.EOF
 	}
-	return written, nil
+	want := len(p)
+	if int64(want) > r.size-off {
+		want = int(r.size - off)
+	}
+	if want == 0 {
+		return 0, io.EOF
+	}
+	out := r.readFn.Invoke(off, want)
+	if out.Type() != js.TypeObject {
+		return 0, errors.New("rvz: input read failed")
+	}
+	n := js.CopyBytesToGo(p[:want], out)
+	if n != want {
+		return n, io.ErrUnexpectedEOF
+	}
+	return n, nil
 }
 
-func (w *chunkWriter) flush() {
-	if len(w.buf) == 0 {
-		return
+type jsWriter struct {
+	writeFn js.Value
+	size    int64
+}
+
+func (w *jsWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
 	}
-	out := js.Global().Get("Uint8Array").New(len(w.buf))
-	js.CopyBytesToJS(out, w.buf)
-	w.size += int64(len(w.buf))
-	w.cb.Invoke(out, w.size)
-	w.buf = w.buf[:0]
+	buf := js.Global().Get("Uint8Array").New(len(p))
+	js.CopyBytesToJS(buf, p)
+	result := w.writeFn.Invoke(buf, w.size)
+	n := result.Int()
+	if n != len(p) {
+		return n, io.ErrShortWrite
+	}
+	w.size += int64(n)
+	return n, nil
 }
 
 func convert(this js.Value, args []js.Value) any {
-	if len(args) != 2 {
-		return js.ValueOf(map[string]any{"error": "Expected RVZ bytes and a progress callback."})
+	if len(args) != 0 {
+		return js.ValueOf(map[string]any{"error": "Expected no arguments."})
 	}
-	src, cb := args[0], args[1]
-	n := src.Get("byteLength").Int()
-	input := make([]byte, n)
-	js.CopyBytesToGo(input, src)
 
-	r, err := rvz.NewReader(bytes.NewReader(input))
+	readFn := js.Global().Get("rvzInputRead")
+	writeFn := js.Global().Get("rvzOutputWrite")
+	sizeFn := js.Global().Get("rvzInputSize")
+	if !readFn.Truthy() || !writeFn.Truthy() || !sizeFn.Truthy() {
+		return js.ValueOf(map[string]any{"error": "Local file bridge is not ready."})
+	}
+
+	size := int64(sizeFn.Invoke().Int())
+	r, err := rvz.NewReader(&jsReaderAt{readFn: readFn, size: size})
 	if err != nil {
 		return js.ValueOf(map[string]any{"error": fmt.Sprintf("RVZ error: %v", err)})
 	}
 
-	total := r.Size()
-	w := &chunkWriter{cb: cb, buf: make([]byte, 0, 4*1024*1024)}
+	w := &jsWriter{writeFn: writeFn}
 	buf := make([]byte, 4*1024*1024)
 	var done int64
+	total := r.Size()
 
 	for {
 		n, er := r.Read(buf)
@@ -73,7 +86,7 @@ func convert(this js.Value, args []js.Value) any {
 				return js.ValueOf(map[string]any{"error": ew.Error()})
 			}
 			done += int64(n)
-			cb.Invoke(js.Null(), done, total)
+			js.Global().Get("rvzProgress").Invoke(done, total)
 		}
 		if er == io.EOF {
 			break
@@ -82,7 +95,6 @@ func convert(this js.Value, args []js.Value) any {
 			return js.ValueOf(map[string]any{"error": er.Error()})
 		}
 	}
-	w.flush()
 	return js.ValueOf(map[string]any{"ok": true, "size": done})
 }
 

@@ -55,7 +55,12 @@ var (
 	doneSize      int64
 )
 
-func start(this js.Value, args []js.Value) any {
+func start(this js.Value, args []js.Value) (result any) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = js.ValueOf(map[string]any{"error": fmt.Sprintf("WASM startup panic: %v", r)})
+		}
+	}()
 	readFn := js.Global().Get("rvzInputRead")
 	writeFn = js.Global().Get("rvzOutputWrite")
 	sizeFn := js.Global().Get("rvzInputSize")

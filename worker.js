@@ -3,6 +3,7 @@ let outputAccess=null;
 let inputReader=null;
 let cache=null;
 let cacheStart=0;
+let readBuffer=null;
 const OUT_NAME='rvz-output.iso';
 const CACHE_SIZE=4*1024*1024;
 
@@ -22,18 +23,34 @@ async function initFiles(file,outputName){
   globalThis.rvzInputRead=(offset,length)=>{
     if(length<=0)return new Uint8Array(0);
     const start=Number(offset);
-    const end=Math.min(inputFile.size,start+length);
-    if(start<0||start>=inputFile.size||end<=start)return new Uint8Array(0);
+    if(!Number.isFinite(start)||start<0||start>=inputFile.size)return new Uint8Array(0);
 
-    if(!cache || start<cacheStart || end>cacheStart+cache.byteLength){
-      cacheStart=Math.floor(start/CACHE_SIZE)*CACHE_SIZE;
-      const cacheEnd=Math.min(inputFile.size,cacheStart+CACHE_SIZE);
-      cache=new Uint8Array(inputReader.readAsArrayBuffer(inputFile.slice(cacheStart,cacheEnd)));
+    const wanted=Math.min(Number(length),inputFile.size-start);
+    if(wanted<=0)return new Uint8Array(0);
+
+    if(!readBuffer || readBuffer.byteLength<wanted){
+      readBuffer=new Uint8Array(wanted);
     }
 
-    const from=start-cacheStart;
-    const to=Math.min(from+length,cache.byteLength);
-    return cache.subarray(from,to);
+    let copied=0;
+    while(copied<wanted){
+      const pos=start+copied;
+
+      if(!cache || pos<cacheStart || pos>=cacheStart+cache.byteLength){
+        cacheStart=Math.floor(pos/CACHE_SIZE)*CACHE_SIZE;
+        const cacheEnd=Math.min(inputFile.size,cacheStart+CACHE_SIZE);
+        cache=new Uint8Array(inputReader.readAsArrayBuffer(inputFile.slice(cacheStart,cacheEnd)));
+      }
+
+      const from=pos-cacheStart;
+      const take=Math.min(wanted-copied,cache.byteLength-from);
+      if(take<=0)break;
+
+      readBuffer.set(cache.subarray(from,from+take),copied);
+      copied+=take;
+    }
+
+    return readBuffer.subarray(0,copied);
   };
 
   globalThis.rvzOutputWrite=(data,offset)=>outputAccess.write(data,{at:Number(offset)});
@@ -68,6 +85,7 @@ onmessage=async e=>{
     inputFile=null;
     inputReader=null;
     cache=null;
+    readBuffer=null;
     postMessage({type:'done',size:result.size,name:m.name});
   }catch(e){
     try{if(outputAccess)outputAccess.close()}catch(_){}
@@ -75,6 +93,7 @@ onmessage=async e=>{
     inputFile=null;
     inputReader=null;
     cache=null;
+    readBuffer=null;
     postMessage({type:'error',message:e.message||String(e)});
   }
 };

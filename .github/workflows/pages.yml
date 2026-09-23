@@ -41,7 +41,9 @@ jobs:
           cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" public/wasm_exec.js
 
       - name: Prepare site
-        run: cp index.html public/index.html
+        run: |
+          cp index.html public/index.html
+          cp worker.js public/worker.js
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

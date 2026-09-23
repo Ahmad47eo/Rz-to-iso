@@ -46,11 +46,13 @@ async function init(){
       if(m.type==='ready'){
         ready=true;button.disabled=!selected;
         setStatus(selected?'Selected: '+selected.name+'\nReady.':'Decoder ready. Choose an RVZ file.');
+      }else if(m.type==='started'){
+        setStatus('Converting…\nStarting safe 1 MB chunks.');
       }else if(m.type==='reading'){
         setStatus('Reading RVZ…');
       }else if(m.type==='progress'){
         bar.style.width=Math.min(100,(m.done/m.total)*100)+'%';
-        setStatus('Converting…\n'+(m.done/1073741824).toFixed(2)+' / '+(m.total/1073741824).toFixed(2)+' GB');
+        setStatus('Converting…\n'+(m.done/1073741824).toFixed(2)+' / '+(m.total/1073741824).toFixed(2)+' GB\nChunk '+m.step+' • '+m.stepMs+' ms');
       }else if(m.type==='done'){
         try{
           const root=await navigator.storage.getDirectory();
@@ -66,7 +68,7 @@ async function init(){
         }catch(err){setStatus('ISO created, but download failed: '+err.message)}
         button.disabled=false;
       }else if(m.type==='error'){
-        setStatus('Conversion failed: '+m.message);
+        setStatus('Conversion failed: '+m.message+'\nLast chunk: '+(m.step||0)+' • '+(m.stepMs||0)+' ms');
         button.disabled=false;
       }
     };

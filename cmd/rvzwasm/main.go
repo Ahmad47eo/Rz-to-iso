@@ -59,9 +59,8 @@ func convert(this js.Value, args []js.Value) any {
 		return js.ValueOf(map[string]any{"error": fmt.Sprintf("RVZ error: %v", err)})
 	}
 
-	// 50 MiB batch: larger than the previous mobile-safe setting,
-	// while avoiding the 100 MiB + 100 MiB memory pressure that killed the tab.
-	const batchSize = 50 * 1024 * 1024
+	// 30 MiB batch for a balance between throughput and mobile memory usage.
+	const batchSize = 30 * 1024 * 1024
 	out := make([]byte, batchSize)
 	total := r.Size()
 	var done int64

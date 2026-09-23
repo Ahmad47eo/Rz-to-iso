@@ -86,7 +86,9 @@ func convert(this js.Value, args []js.Value) any {
 				return js.ValueOf(map[string]any{"error": ew.Error()})
 			}
 			done += int64(n)
-			js.Global().Get("rvzProgress").Invoke(done, total)
+			if done == int64(n) || done%(64*1024*1024) < int64(n) || er == io.EOF {
+				js.Global().Get("rvzProgress").Invoke(done, total)
+			}
 		}
 		if er == io.EOF {
 			break

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"syscall/js"
@@ -60,7 +59,7 @@ func convert(this js.Value, args []js.Value) any {
 		return js.ValueOf(map[string]any{"error": "Local file bridge is not ready."})
 	}
 
-	size := int64(sizeFn.Invoke().Int())
+	size := int64(sizeFn.Invoke().Float())
 	r, err := rvz.NewReader(&jsReaderAt{readFn: readFn, size: size})
 	if err != nil {
 		return js.ValueOf(map[string]any{"error": fmt.Sprintf("RVZ error: %v", err)})

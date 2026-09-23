@@ -91,6 +91,7 @@ onmessage=async e=>{
     postMessage({type:'reading'});
 
     const started=globalThis.rvzStart();
+    if(!started || started===undefined) throw new Error('WASM startup returned no result.');
     if(started.error)throw new Error(started.error);
 
     const total=started.size;

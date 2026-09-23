@@ -5,8 +5,10 @@ let cache=null;
 let cacheStart=0;
 let readBuffer=null;
 const OUT_NAME='rvz-output.iso';
-const CACHE_SIZE=4*1024*1024;
+const CACHE_SIZE=1*1024*1024;
 const MAX_READ_SIZE=CACHE_SIZE;
+let stepCount=0;
+let lastStepMs=0;
 
 async function initFiles(file,outputName){
   if(!file) throw new Error('No RVZ file was supplied.');
@@ -92,9 +94,15 @@ onmessage=async e=>{
     if(started.error)throw new Error(started.error);
 
     const total=started.size;
+    stepCount=0;
+    lastStepMs=0;
+    postMessage({type:'started',total});
     const runStep=()=>{
+      const stepStarted=performance.now();
       try{
         const result=globalThis.rvzStep();
+        lastStepMs=performance.now()-stepStarted;
+        stepCount++;
 
         if(result.error)throw new Error(result.error);
 

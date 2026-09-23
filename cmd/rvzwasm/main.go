@@ -17,19 +17,39 @@ func (r *jsReaderAt) ReadAt(p []byte, off int64) (int, error) {
 	if off < 0 || off >= r.size {
 		return 0, io.EOF
 	}
-	want := len(p)
-	if int64(want) > r.size-off {
-		want = int(r.size - off)
+
+	total := 0
+	for total < len(p) {
+		current := off + int64(total)
+		if current >= r.size {
+			break
+		}
+
+		want := len(p) - total
+		remaining := r.size - current
+		if int64(want) > remaining {
+			want = int(remaining)
+		}
+
+		out := r.readFn.Invoke(current, want)
+		n := js.CopyBytesToGo(p[total:total+want], out)
+		if n <= 0 {
+			break
+		}
+		total += n
+
+		if n != want {
+			break
+		}
 	}
-	if want == 0 {
-		return 0, io.EOF
+
+	if total == len(p) {
+		return total, nil
 	}
-	out := r.readFn.Invoke(off, want)
-	n := js.CopyBytesToGo(p[:want], out)
-	if n != want {
-		return n, io.ErrUnexpectedEOF
+	if total > 0 {
+		return total, io.EOF
 	}
-	return n, nil
+	return 0, io.EOF
 }
 
 func convert(this js.Value, args []js.Value) any {

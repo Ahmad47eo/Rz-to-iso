@@ -102,10 +102,6 @@ func step(this js.Value, args []js.Value) any {
 		doneSize += int64(n)
 	}
 
-	if er != nil && er != io.EOF {
-		return js.ValueOf(map[string]any{"error": er.Error()})
-	}
-
 	if er == io.EOF || er == io.ErrUnexpectedEOF {
 		result := map[string]any{"done": true, "size": doneSize}
 		converter = nil
@@ -114,6 +110,9 @@ func step(this js.Value, args []js.Value) any {
 		return js.ValueOf(result)
 	}
 
+	if er != nil {
+		return js.ValueOf(map[string]any{"error": er.Error()})
+	}
 
 	return js.ValueOf(map[string]any{"done": false, "size": doneSize, "total": totalSize})
 }

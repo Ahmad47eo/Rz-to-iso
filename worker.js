@@ -115,7 +115,7 @@ onmessage=async e=>{
           return;
         }
 
-        postMessage({type:'progress',done:result.size,total});
+        postMessage({type:'progress',done:result.size,total,step:stepCount,stepMs:Math.round(lastStepMs)});
         setTimeout(runStep,0);
       }catch(err){
         try{if(outputAccess)outputAccess.close()}catch(_){}

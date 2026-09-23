@@ -39,12 +39,47 @@ jobs:
           EOF
 
           go get github.com/bodgit/rvz@222783ed0f26b7a934d3de9f28d2cdc14baf266c
+          go mod download
+
+          # The upstream decoder parallelizes up to runtime.NumCPU() RVZ groups.
+          # On iPhone/WASM that can create a large temporary-memory spike and
+          # kill the worker, producing the white-screen failure. Patch the local
+          # module copy to use one group at a time on js/wasm.
+          RVZ_DIR="$(go list -m -f '{{.Dir}}' github.com/bodgit/rvz)"
+          rm -rf rvz-patched
+          cp -a "$RVZ_DIR" rvz-patched
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("rvz-patched/part.go")
+          s = p.read_text()
+          old = "eg.SetLimit(runtime.NumCPU())"
+          new = 'limit := runtime.NumCPU()\n\tif runtime.GOOS == "js" {\n\t\tlimit = 1\n\t}\n\teg.SetLimit(limit)'
+          if old not in s:
+              raise SystemExit("RVZ concurrency line not found")
+          p.write_text(s.replace(old, new, 1))
+          PY
+          go mod edit -replace=github.com/bodgit/rvz=./rvz-patched
           go mod tidy
 
           GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o public/rvz.wasm ./cmd/rvzwasm
           cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" public/wasm_exec.js
 
       - name: Prepare site
+        run: |
+          cp index.html public/index.html
+          cp worker.js public/worker.js
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: public
+
+      - name: Deploy to GitHub Pages
+        id: deployment
         run: |
           cp index.html public/index.html
           cp worker.js public/worker.js

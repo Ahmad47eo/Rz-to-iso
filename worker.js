@@ -1,21 +1,19 @@
-let inputHandle=null,inputAccess=null,outputHandle=null,outputAccess=null;
+let inputAccess=null,outputAccess=null;
+let inputBuffer=null;
 
 async function initFiles(inputName,outputName){
   const root=await navigator.storage.getDirectory();
   const ih=await root.getFileHandle(inputName);
   const oh=await root.getFileHandle(outputName,{create:true});
-  inputHandle=ih; outputHandle=oh;
   inputAccess=await ih.createSyncAccessHandle({mode:'read-only'});
   outputAccess=await oh.createSyncAccessHandle({mode:'readwrite'});
   globalThis.rvzInputSize=()=>inputAccess.getSize();
   globalThis.rvzInputRead=(offset,length)=>{
-    const b=new Uint8Array(length);
-    const n=inputAccess.read(b,{at:Number(offset)});
-    return n===length?b:b.slice(0,n);
+    if(!inputBuffer || inputBuffer.byteLength<length) inputBuffer=new Uint8Array(length);
+    const n=inputAccess.read(inputBuffer,{at:Number(offset)});
+    return n===length?inputBuffer:inputBuffer.slice(0,n);
   };
-  globalThis.rvzOutputWrite=(data,offset)=>{
-    return outputAccess.write(data,{at:Number(offset)});
-  };
+  globalThis.rvzOutputWrite=(data,offset)=>outputAccess.write(data,{at:Number(offset)});
   globalThis.rvzProgress=(done,total)=>postMessage({type:'progress',done,total});
 }
 

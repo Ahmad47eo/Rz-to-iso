@@ -66,7 +66,7 @@ let wasmReady=false;
   try{
     importScripts('./wasm_exec.js');
     const go=new Go();
-    const result=await WebAssembly.instantiateStreaming(fetch('./rvz.wasm'),go.importObject);
+    const result=await WebAssembly.instantiateStreaming(fetch('./rvz.wasm?v=4fb6dae', {cache:'reload'}),go.importObject);
     go.run(result.instance);
     wasmReady=true;
     postMessage({type:'ready'});
@@ -104,7 +104,7 @@ onmessage=async e=>{
         lastStepMs=performance.now()-stepStarted;
         stepCount++;
 
-        if(!result || result===undefined) throw new Error('Decoder returned no result (WASM likely panicked).');
+        if(!result || result===undefined) throw new Error('NEW BUILD: Decoder returned no result (WASM likely panicked).');
         if(result.error)throw new Error(result.error);
 
         if(result.done){

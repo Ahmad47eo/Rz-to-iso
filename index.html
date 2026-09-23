@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<link rel="preload" href="./wasm_exec.js?v=4fb6dae" as="script">
+<link rel="preload" href="./wasm_exec.js??v=fix20260923" as="script">
 <link rel="preload" href="./rvz.wasm" as="fetch" type="application/wasm" crossorigin>
 <title>RVZ → ISO Converter</title>
 <style>
@@ -18,7 +18,7 @@
 <button id="convert" class="btn" disabled>Convert to ISO</button>
 <div class="bar"><i id="bar"></i></div>
 <div id="status" class="status">Loading decoder…</div>
-<div class="small">The converter reads the selected file directly in a worker, so it does not copy the whole RVZ into browser storage.</div>
+<div class="small">The converter uses a small worker-side read cache and writes the ISO directly to local browser storage.</div>
 </main>
 <script>
 const drop=document.querySelector('#drop'),input=document.querySelector('#file'),button=document.querySelector('#convert'),status=document.querySelector('#status'),bar=document.querySelector('#bar');
@@ -40,14 +40,14 @@ drop.addEventListener('drop',e=>setFile(e.dataTransfer.files[0]));
 
 async function init(){
   try{
-    worker=new Worker('./worker.js?v=4fb6dae', {type:'classic'});
+    worker=new Worker('./worker.js??v=fix20260923', {type:'classic'});
     worker.onmessage=async e=>{
       const m=e.data||{};
       if(m.type==='ready'){
         ready=true;button.disabled=!selected;
         setStatus(selected?'Selected: '+selected.name+'\nReady.':'Decoder ready. Choose an RVZ file.');
       }else if(m.type==='started'){
-        setStatus('Converting…\nStarting safe 1 MB chunks.');
+        setStatus('Converting…\nStarting decoder…');
       }else if(m.type==='reading'){
         setStatus('Reading RVZ…');
       }else if(m.type==='progress'){

@@ -8,9 +8,36 @@ import (
 	"github.com/bodgit/rvz"
 )
 
+const inputCacheSize = 2 * 1024 * 1024
+
 type jsReaderAt struct {
-	readFn js.Value
-	size   int64
+	readFn      js.Value
+	size        int64
+	cache       []byte
+	cacheStart  int64
+	cacheLength int
+}
+
+func (r *jsReaderAt) fill(off int64) error {
+	if off < 0 || off >= r.size {
+		return io.EOF
+	}
+
+	start := off - (off % inputCacheSize)
+	want := int64(inputCacheSize)
+	if remaining := r.size - start; remaining < want {
+		want = remaining
+	}
+
+	out := r.readFn.Invoke(start, want)
+	n := js.CopyBytesToGo(r.cache[:int(want)], out)
+	if n <= 0 {
+		return io.EOF
+	}
+
+	r.cacheStart = start
+	r.cacheLength = n
+	return nil
 }
 
 func (r *jsReaderAt) ReadAt(p []byte, off int64) (int, error) {
@@ -25,18 +52,28 @@ func (r *jsReaderAt) ReadAt(p []byte, off int64) (int, error) {
 			break
 		}
 
-		want := len(p) - total
-		remaining := r.size - current
-		if int64(want) > remaining {
-			want = int(remaining)
+		if current < r.cacheStart || current >= r.cacheStart+int64(r.cacheLength) {
+			if err := r.fill(current); err != nil {
+				break
+			}
 		}
 
-		out := r.readFn.Invoke(current, want)
-		n := js.CopyBytesToGo(p[total:total+want], out)
-		if n <= 0 {
+		inside := current - r.cacheStart
+		available := r.cacheLength - int(inside)
+		if available <= 0 {
 			break
 		}
-		total += n
+
+		want := len(p) - total
+		if want > available {
+			want = available
+		}
+		if remaining := int(r.size - current); want > remaining {
+			want = remaining
+		}
+
+		copy(p[total:total+want], r.cache[int(inside):int(inside)+want])
+		total += want
 	}
 
 	if total == len(p) {
@@ -46,13 +83,13 @@ func (r *jsReaderAt) ReadAt(p []byte, off int64) (int, error) {
 }
 
 var (
-	converter     rvz.Reader
-	writeFn       js.Value
-	outBuffer     []byte
-	jsBuffer      js.Value
-	outOffset     int64
-	totalSize     int64
-	doneSize      int64
+	converter rvz.Reader
+	writeFn   js.Value
+	outBuffer []byte
+	jsBuffer  js.Value
+	outOffset int64
+	totalSize int64
+	doneSize  int64
 )
 
 func start(this js.Value, args []js.Value) (result any) {
@@ -61,6 +98,7 @@ func start(this js.Value, args []js.Value) (result any) {
 			result = js.ValueOf(map[string]any{"error": fmt.Sprintf("WASM startup panic: %v", r)})
 		}
 	}()
+
 	readFn := js.Global().Get("rvzInputRead")
 	writeFn = js.Global().Get("rvzOutputWrite")
 	sizeFn := js.Global().Get("rvzInputSize")
@@ -69,7 +107,13 @@ func start(this js.Value, args []js.Value) (result any) {
 	}
 
 	size := int64(sizeFn.Invoke().Float())
-	r, err := rvz.NewReader(&jsReaderAt{readFn: readFn, size: size})
+	readerAt := &jsReaderAt{
+		readFn: readFn,
+		size:   size,
+		cache:  make([]byte, inputCacheSize),
+	}
+
+	r, err := rvz.NewReader(readerAt)
 	if err != nil {
 		return js.ValueOf(map[string]any{"error": fmt.Sprintf("RVZ error: %v", err)})
 	}
@@ -91,11 +135,12 @@ func step(this js.Value, args []js.Value) (result any) {
 			result = js.ValueOf(map[string]any{"error": fmt.Sprintf("WASM decoder panic: %v", r)})
 		}
 	}()
+
 	if converter == nil {
 		return js.ValueOf(map[string]any{"error": "Converter is not started."})
 	}
 
-	n, er := io.ReadFull(converter, outBuffer)
+	n, er := converter.Read(outBuffer)
 	if n > 0 {
 		js.CopyBytesToJS(jsBuffer, outBuffer[:n])
 		data := jsBuffer
@@ -112,7 +157,7 @@ func step(this js.Value, args []js.Value) (result any) {
 		doneSize += int64(n)
 	}
 
-	if er == io.EOF || er == io.ErrUnexpectedEOF {
+	if er == io.EOF {
 		result := map[string]any{"done": true, "size": doneSize}
 		converter = nil
 		outBuffer = nil

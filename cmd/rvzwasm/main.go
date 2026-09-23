@@ -37,19 +37,12 @@ func (r *jsReaderAt) ReadAt(p []byte, off int64) (int, error) {
 			break
 		}
 		total += n
-
-		if n != want {
-			break
-		}
 	}
 
 	if total == len(p) {
 		return total, nil
 	}
-	if total > 0 {
-		return total, io.EOF
-	}
-	return 0, io.EOF
+	return total, io.EOF
 }
 
 func convert(this js.Value, args []js.Value) any {
@@ -66,8 +59,6 @@ func convert(this js.Value, args []js.Value) any {
 		return js.ValueOf(map[string]any{"error": fmt.Sprintf("RVZ error: %v", err)})
 	}
 
-	// 100 MiB reusable decompression buffer.
-	// Data is accumulated before crossing the JS/WASM bridge.
 	const batchSize = 100 * 1024 * 1024
 	out := make([]byte, batchSize)
 	total := r.Size()

@@ -6,6 +6,7 @@ let cacheStart=0;
 let readBuffer=null;
 const OUT_NAME='rvz-output.iso';
 const CACHE_SIZE=4*1024*1024;
+const MAX_READ_SIZE=CACHE_SIZE;
 
 async function initFiles(file,outputName){
   if(!file) throw new Error('No RVZ file was supplied.');
@@ -13,6 +14,7 @@ async function initFiles(file,outputName){
   inputReader=new FileReaderSync();
   cache=null;
   cacheStart=0;
+  readBuffer=null;
 
   const root=await navigator.storage.getDirectory();
   const oh=await root.getFileHandle(outputName,{create:true});
@@ -25,7 +27,7 @@ async function initFiles(file,outputName){
     const start=Number(offset);
     if(!Number.isFinite(start)||start<0||start>=inputFile.size)return new Uint8Array(0);
 
-    const wanted=Math.min(Number(length),inputFile.size-start);
+    const wanted=Math.min(Number(length),inputFile.size-start,MAX_READ_SIZE);
     if(wanted<=0)return new Uint8Array(0);
 
     if(!readBuffer || readBuffer.byteLength<wanted){

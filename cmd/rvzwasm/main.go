@@ -45,9 +45,19 @@ func (r *jsReaderAt) ReadAt(p []byte, off int64) (int, error) {
 	return total, io.EOF
 }
 
-func convert(this js.Value, args []js.Value) any {
+var (
+	converter     *rvz.Reader
+	writeFn       js.Value
+	outBuffer     []byte
+	jsBuffer      js.Value
+	outOffset     int64
+	totalSize     int64
+	doneSize      int64
+)
+
+func start(this js.Value, args []js.Value) any {
 	readFn := js.Global().Get("rvzInputRead")
-	writeFn := js.Global().Get("rvzOutputWrite")
+	writeFn = js.Global().Get("rvzOutputWrite")
 	sizeFn := js.Global().Get("rvzInputSize")
 	if !readFn.Truthy() || !writeFn.Truthy() || !sizeFn.Truthy() {
 		return js.ValueOf(map[string]any{"error": "Local file bridge is not ready."})
@@ -59,54 +69,60 @@ func convert(this js.Value, args []js.Value) any {
 		return js.ValueOf(map[string]any{"error": fmt.Sprintf("RVZ error: %v", err)})
 	}
 
-	// Keep both WASM and JavaScript memory low on iPhone/iPad.
 	const batchSize = 4 * 1024 * 1024
-	out := make([]byte, batchSize)
-	total := r.Size()
-	var done int64
-	var outOffset int64
-	lastProgress := int64(0)
+	converter = r
+	outBuffer = make([]byte, batchSize)
+	jsBuffer = js.Global().Get("Uint8Array").New(batchSize)
+	outOffset = 0
+	totalSize = r.Size()
+	doneSize = 0
 
-	jsBuf := js.Global().Get("Uint8Array").New(batchSize)
+	return js.ValueOf(map[string]any{"ok": true, "size": totalSize})
+}
 
-	for {
-		n, er := r.Read(out)
-		if n > 0 {
-			js.CopyBytesToJS(jsBuf, out[:n])
-			data := jsBuf
-			if n != batchSize {
-				data = jsBuf.Call("subarray", 0, n)
-			}
-
-			written := writeFn.Invoke(data, outOffset).Int()
-			if written != n {
-				return js.ValueOf(map[string]any{"error": io.ErrShortWrite.Error()})
-			}
-
-			outOffset += int64(n)
-			done += int64(n)
-
-			if done-lastProgress >= 16*1024*1024 || er == io.EOF {
-				js.Global().Get("rvzProgress").Invoke(done, total)
-				lastProgress = done
-			}
-		}
-
-		if er == io.EOF {
-			break
-		}
-		if er != nil {
-			return js.ValueOf(map[string]any{"error": er.Error()})
-		}
-		if n == 0 {
-			return js.ValueOf(map[string]any{"error": "Decoder returned no data."})
-		}
+func step(this js.Value, args []js.Value) any {
+	if converter == nil {
+		return js.ValueOf(map[string]any{"error": "Converter is not started."})
 	}
 
-	return js.ValueOf(map[string]any{"ok": true, "size": done})
+	n, er := converter.Read(outBuffer)
+	if n > 0 {
+		js.CopyBytesToJS(jsBuffer, outBuffer[:n])
+		data := jsBuffer
+		if n != len(outBuffer) {
+			data = jsBuffer.Call("subarray", 0, n)
+		}
+
+		written := writeFn.Invoke(data, outOffset).Int()
+		if written != n {
+			return js.ValueOf(map[string]any{"error": io.ErrShortWrite.Error()})
+		}
+
+		outOffset += int64(n)
+		doneSize += int64(n)
+	}
+
+	if er != nil && er != io.EOF {
+		return js.ValueOf(map[string]any{"error": er.Error()})
+	}
+
+	if er == io.EOF {
+		result := map[string]any{"done": true, "size": doneSize}
+		converter = nil
+		outBuffer = nil
+		jsBuffer = js.Undefined()
+		return js.ValueOf(result)
+	}
+
+	if n == 0 {
+		return js.ValueOf(map[string]any{"error": "Decoder returned no data."})
+	}
+
+	return js.ValueOf(map[string]any{"done": false, "size": doneSize, "total": totalSize})
 }
 
 func main() {
-	js.Global().Set("rvzConvert", js.FuncOf(convert))
+	js.Global().Set("rvzStart", js.FuncOf(start))
+	js.Global().Set("rvzStep", js.FuncOf(step))
 	select {}
 }

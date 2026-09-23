@@ -35,15 +35,20 @@ func (r *jsReaderAt) ReadAt(p []byte, off int64) (int, error) {
 type jsWriter struct {
 	writeFn js.Value
 	size    int64
+	buf     js.Value
+	capacity int
 }
 
 func (w *jsWriter) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	buf := js.Global().Get("Uint8Array").New(len(p))
-	js.CopyBytesToJS(buf, p)
-	n := w.writeFn.Invoke(buf, w.size).Int()
+	if len(p) > w.capacity {
+		w.capacity = len(p)
+		w.buf = js.Global().Get("Uint8Array").New(w.capacity)
+	}
+	js.CopyBytesToJS(w.buf, p)
+	n := w.writeFn.Invoke(w.buf, w.size).Int()
 	if n != len(p) {
 		return n, io.ErrShortWrite
 	}
@@ -65,7 +70,11 @@ func convert(this js.Value, args []js.Value) any {
 		return js.ValueOf(map[string]any{"error": fmt.Sprintf("RVZ error: %v", err)})
 	}
 
-	w := &jsWriter{writeFn: writeFn}
+	w := &jsWriter{
+		writeFn: writeFn,
+		buf: js.Global().Get("Uint8Array").New(4 * 1024 * 1024),
+		capacity: 4 * 1024 * 1024,
+	}
 	buf := make([]byte, 4*1024*1024)
 	var done int64
 	total := r.Size()

@@ -46,7 +46,7 @@ func (r *jsReaderAt) ReadAt(p []byte, off int64) (int, error) {
 }
 
 var (
-	converter     *rvz.Reader
+	converter     rvz.Reader
 	writeFn       js.Value
 	outBuffer     []byte
 	jsBuffer      js.Value

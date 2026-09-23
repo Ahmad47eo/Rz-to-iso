@@ -56,50 +56,53 @@ func (w *jsWriter) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func convert(this js.Value, args []js.Value) any {
-	readFn := js.Global().Get("rvzInputRead")
-	writeFn := js.Global().Get("rvzOutputWrite")
-	sizeFn := js.Global().Get("rvzInputSize")
-	if !readFn.Truthy() || !writeFn.Truthy() || !sizeFn.Truthy() {
-		return js.ValueOf(map[string]any{"error": "Local file bridge is not ready."})
+func convert(this js.Value,args []js.Value) any {
+	readFn:=js.Global().Get("rvzInputRead")
+	writeFn:=js.Global().Get("rvzOutputWrite")
+	sizeFn:=js.Global().Get("rvzInputSize")
+	if !readFn.Truthy()||!writeFn.Truthy()||!sizeFn.Truthy(){
+		return js.ValueOf(map[string]any{"error":"Local file bridge is not ready."})
 	}
+	size:=int64(sizeFn.Invoke().Float())
+	r,err:=rvz.NewReader(&jsReaderAt{readFn:readFn,size:size})
+	if err!=nil{return js.ValueOf(map[string]any{"error":fmt.Sprintf("RVZ error: %v",err)})}
 
-	size := int64(sizeFn.Invoke().Float())
-	r, err := rvz.NewReader(&jsReaderAt{readFn: readFn, size: size})
-	if err != nil {
-		return js.ValueOf(map[string]any{"error": fmt.Sprintf("RVZ error: %v", err)})
-	}
-
-	w := &jsWriter{
-		writeFn: writeFn,
-		buf: js.Global().Get("Uint8Array").New(4 * 1024 * 1024),
-		capacity: 4 * 1024 * 1024,
-	}
-	buf := make([]byte, 4*1024*1024)
+	// Keep decompressed data in a large reusable buffer and cross the JS/WASM
+	// boundary only once per 16 MiB instead of once per Read().
+	const batchSize=16*1024*1024
+	out:=make([]byte,batchSize)
+	total:=r.Size()
 	var done int64
-	total := r.Size()
+	var outOffset int64
+	lastProgress:=int64(0)
+
+	flush:=func(n int) error {
+		if n==0{return nil}
+		buf:=js.Global().Get("Uint8Array").New(n)
+		js.CopyBytesToJS(buf,out[:n])
+		written:=writeFn.Invoke(buf,outOffset).Int()
+		if written!=n{return io.ErrShortWrite}
+		outOffset+=int64(n)
+		return nil
+	}
 
 	for {
-		n, er := r.Read(buf)
-		if n > 0 {
-			if _, ew := w.Write(buf[:n]); ew != nil {
-				return js.ValueOf(map[string]any{"error": ew.Error()})
+		n,er:=r.Read(out)
+		if n>0 {
+			if err:=flush(n);err!=nil{
+				return js.ValueOf(map[string]any{"error":err.Error()})
 			}
-			done += int64(n)
-			if done == int64(n) || done%(64*1024*1024) < int64(n) || er == io.EOF {
-				js.Global().Get("rvzProgress").Invoke(done, total)
+			done+=int64(n)
+			if done-lastProgress >= 64*1024*1024 || er==io.EOF {
+				js.Global().Get("rvzProgress").Invoke(done,total)
+				lastProgress=done
 			}
 		}
-		if er == io.EOF {
-			break
-		}
-		if er != nil {
-			return js.ValueOf(map[string]any{"error": er.Error()})
-		}
+		if er==io.EOF{break}
+		if er!=nil{return js.ValueOf(map[string]any{"error":er.Error()})}
 	}
-	return js.ValueOf(map[string]any{"ok": true, "size": done})
+	return js.ValueOf(map[string]any{"ok":true,"size":done})
 }
-
 func main() {
 	js.Global().Set("rvzConvert", js.FuncOf(convert))
 	select {}

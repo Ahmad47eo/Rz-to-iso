@@ -22,6 +22,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
           go-version: '1.27.1'
@@ -36,7 +37,10 @@ jobs:
 
           require github.com/bodgit/rvz v1.0.3
           EOF
+
+          go get github.com/bodgit/rvz@222783ed0f26b7a934d3de9f28d2cdc14baf266c
           go mod tidy
+
           GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o public/rvz.wasm ./cmd/rvzwasm
           cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" public/wasm_exec.js
 

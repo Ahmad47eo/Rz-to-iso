@@ -1,13 +1,17 @@
 let inputFile=null;
 let outputAccess=null;
 let inputReader=null;
-let inputBuffer=null;
+let cache=null;
+let cacheStart=0;
 const OUT_NAME='rvz-output.iso';
+const CACHE_SIZE=4*1024*1024;
 
 async function initFiles(file,outputName){
   if(!file) throw new Error('No RVZ file was supplied.');
   inputFile=file;
   inputReader=new FileReaderSync();
+  cache=null;
+  cacheStart=0;
 
   const root=await navigator.storage.getDirectory();
   const oh=await root.getFileHandle(outputName,{create:true});
@@ -21,11 +25,17 @@ async function initFiles(file,outputName){
     const end=Math.min(inputFile.size,start+length);
     if(start<0||start>=inputFile.size||end<=start)return new Uint8Array(0);
 
-    const bytes=new Uint8Array(inputReader.readAsArrayBuffer(inputFile.slice(start,end)));
-    if(!inputBuffer||inputBuffer.byteLength<bytes.byteLength)inputBuffer=new Uint8Array(bytes.byteLength);
-    inputBuffer.set(bytes);
-    return bytes.byteLength===length?inputBuffer:inputBuffer.slice(0,bytes.byteLength);
+    if(!cache || start<cacheStart || end>cacheStart+cache.byteLength){
+      cacheStart=Math.floor(start/CACHE_SIZE)*CACHE_SIZE;
+      const cacheEnd=Math.min(inputFile.size,cacheStart+CACHE_SIZE);
+      cache=new Uint8Array(inputReader.readAsArrayBuffer(inputFile.slice(cacheStart,cacheEnd)));
+    }
+
+    const from=start-cacheStart;
+    const to=Math.min(from+length,cache.byteLength);
+    return cache.subarray(from,to);
   };
+
   globalThis.rvzOutputWrite=(data,offset)=>outputAccess.write(data,{at:Number(offset)});
   globalThis.rvzProgress=(done,total)=>postMessage({type:'progress',done,total});
 }
@@ -57,14 +67,14 @@ onmessage=async e=>{
     outputAccess=null;
     inputFile=null;
     inputReader=null;
-    inputBuffer=null;
+    cache=null;
     postMessage({type:'done',size:result.size,name:m.name});
   }catch(e){
     try{if(outputAccess)outputAccess.close()}catch(_){}
     outputAccess=null;
     inputFile=null;
     inputReader=null;
-    inputBuffer=null;
+    cache=null;
     postMessage({type:'error',message:e.message||String(e)});
   }
 };

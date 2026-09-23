@@ -59,7 +59,9 @@ func convert(this js.Value, args []js.Value) any {
 		return js.ValueOf(map[string]any{"error": fmt.Sprintf("RVZ error: %v", err)})
 	}
 
-	const batchSize = 100 * 1024 * 1024
+	// Keep the batch moderate for mobile Safari/iOS memory limits.
+	// A 100 MiB Go buffer + 100 MiB JS buffer can cause the tab to be killed.
+	const batchSize = 16 * 1024 * 1024
 	out := make([]byte, batchSize)
 	total := r.Size()
 	var done int64
@@ -97,7 +99,7 @@ func convert(this js.Value, args []js.Value) any {
 			done += int64(pending)
 			pending = 0
 
-			if done-lastProgress >= 64*1024*1024 || er == io.EOF {
+			if done-lastProgress >= 16*1024*1024 || er == io.EOF {
 				js.Global().Get("rvzProgress").Invoke(done, total)
 				lastProgress = done
 			}

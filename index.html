@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RVZ → ISO Converter</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#0b1020;color:#f5f7ff;min-height:100vh;display:grid;place-items:center;padding:24px}
+.card{width:min(720px,100%);background:#151b2f;border:1px solid #293252;border-radius:24px;padding:28px;box-shadow:0 20px 60px #0006}
+h1{margin:0 0 8px;font-size:clamp(28px,6vw,46px)}p{color:#aeb8d4;line-height:1.5}.drop{margin-top:24px;border:2px dashed #52618d;border-radius:18px;padding:42px 20px;text-align:center;cursor:pointer;background:#10162a;transition:.2s}.drop:hover,.drop.drag{border-color:#8da5ff;background:#17203b}.btn{display:inline-block;margin-top:18px;padding:12px 18px;border:0;border-radius:12px;background:#6d82ff;color:white;font-weight:700;cursor:pointer}.btn:disabled{opacity:.45;cursor:not-allowed}.status{margin-top:20px;padding:14px;border-radius:12px;background:#0e1426;color:#cbd3eb;white-space:pre-wrap}.small{font-size:13px;color:#8f9ab8;margin-top:18px}
+</style>
+</head>
+<body>
+<main class="card">
+<h1>RVZ → ISO</h1>
+<p>Fast, local conversion for your own Wii/GameCube RVZ dumps. Your game file stays on your device.</p>
+<div id="drop" class="drop">
+<strong>Drop an .rvz file here</strong><br>
+<span>or tap to choose a file</span>
+<input id="file" type="file" accept=".rvz" hidden>
+</div>
+<button id="convert" class="btn" disabled>Convert to ISO</button>
+<div id="status" class="status">Waiting for an RVZ file…</div>
+<div class="small">This GitHub Pages interface does not upload or store your game file. A compatible RVZ decoder must be supplied by the browser build before conversion can occur.</div>
+</main>
+<script>
+const drop=document.querySelector('#drop'), input=document.querySelector('#file'), convert=document.querySelector('#convert'), status=document.querySelector('#status');
+let selected=null;
+drop.onclick=()=>input.click();
+input.onchange=()=>setFile(input.files[0]);
+['dragenter','dragover'].forEach(e=>drop.addEventListener(e,x=>{x.preventDefault();drop.classList.add('drag')}));
+['dragleave','drop'].forEach(e=>drop.addEventListener(e,x=>{x.preventDefault();drop.classList.remove('drag')}));
+drop.addEventListener('drop',e=>setFile(e.dataTransfer.files[0]));
+function setFile(f){selected=f;if(!f)return; if(!/\.rvz$/i.test(f.name)){status.textContent='Please choose an .rvz file.';convert.disabled=true;return} convert.disabled=false;status.textContent='Selected: '+f.name+'\nSize: '+(f.size/1073741824).toFixed(2)+' GB\nReady.'}
+convert.onclick=()=>{status.textContent='RVZ decoder is not bundled yet. This page is intentionally not pretending to convert the file without a real decoder.';};
+</script>
+</body>
+</html>
